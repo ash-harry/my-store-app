@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from sqlalchemy import text
 from sqlalchemy import create_engine, text
 from datetime import datetime, timedelta
 
@@ -293,7 +294,8 @@ else:
     ORDER BY SUM(d.sales_qty) DESC, SUM(d.revenue * 3.66) DESC
     """
     
-    report_df = pd.read_sql(query, engine)
+    with engine.connect() as conn:
+    report_df = pd.read_sql(text(query), con=conn)
     
     if report_df.empty:
         st.info("No sales or restock data found for this date range.")
