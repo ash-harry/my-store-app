@@ -295,7 +295,7 @@ else:
     """
     
     with engine.connect() as conn:
-    report_df = pd.read_sql(text(query), con=conn)
+        report_df = pd.read_sql(text(query), con=conn)
     
     if report_df.empty:
         st.info("No sales or restock data found for this date range.")
