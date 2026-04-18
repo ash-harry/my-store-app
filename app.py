@@ -322,9 +322,11 @@ else:
                 st.write("") # Adjusts spacing so the toggle aligns nicely with the header
                 show_all = st.toggle("Show All Items", value=False)
             
-            # Logic: Show all if the toggle is on, otherwise just the top 10
+            # Logic: Show top 100 if the toggle is on, otherwise just the top 10
             if show_all:
-                gallery_df = report_df
+                gallery_df = report_df.head(100) # Safety limit to prevent browser crashes!
+                if len(report_df) > 100:
+                    st.caption("⚠️ Showing the top 100 items to keep the app fast. View the full list in the table below!")
             else:
                 gallery_df = report_df.head(10)
             
