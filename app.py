@@ -357,13 +357,17 @@ else:
                     short_name = name_str[:40] + "..." if len(name_str) > 40 else name_str
                     st.markdown(f"**[{short_name}]({row['url']})**")
                     
+                    # --- SHOW THE UNIT PRICE ---
+                    st.markdown(f"🏷️ AED {row['current_price_aed']:,.2f} / unit")
+                    
                     # --- CHECK FOR ZERO SALES TO SHOW RESTOCKED ---
                     if row['total_units_sold'] > 0:
                         st.markdown(f"📦 **{row['total_units_sold']:,.0f} Sold**")
                     else:
                         st.markdown("🔄 **RESTOCKED**")
                         
-                    st.markdown(f"💰 AED {row['total_revenue_aed']:,.2f}")
+                    # Adding "Total:" so it's clear what this number means
+                    st.markdown(f"💰 Total: AED {row['total_revenue_aed']:,.2f}")
                     st.write("") 
             
             # --- THE "LOAD MORE" BUTTON ---
