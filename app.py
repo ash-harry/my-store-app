@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from datetime import datetime, timedelta
 
 # --- MAKE THE APP WIDE ---
@@ -269,7 +269,7 @@ else:
             st.session_state.end_date += timedelta(days=1)
             st.rerun()
 
-    # --- QUERY AND DISPLAY TABLE (Postgres uses STRING_AGG instead of GROUP_CONCAT) ---
+    # --- QUERY AND DISPLAY TABLE ---
     query = f"""
     WITH RankedInventory AS (
         SELECT unique_id, price as current_price, url, image,
@@ -314,11 +314,22 @@ else:
         st.write("---")
         
         if total_units > 0:
-            st.subheader("🏆 Top 10 Sellers")
-            top_10_df = report_df.head(10)
+            # --- NEW TOGGLE IMPLEMENTATION ---
+            col_title, col_toggle = st.columns([4, 1])
+            with col_title:
+                st.subheader("🏆 Sellers Gallery")
+            with col_toggle:
+                st.write("") # Adjusts spacing so the toggle aligns nicely with the header
+                show_all = st.toggle("Show All Items", value=False)
+            
+            # Logic: Show all if the toggle is on, otherwise just the top 10
+            if show_all:
+                gallery_df = report_df
+            else:
+                gallery_df = report_df.head(10)
             
             cols = st.columns(5)
-            for index, row in top_10_df.reset_index().iterrows():
+            for index, row in gallery_df.reset_index().iterrows():
                 with cols[index % 5]:
                     if row['image']:
                         st.image(row['image'], use_container_width=True)
