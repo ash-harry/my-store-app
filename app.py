@@ -322,7 +322,7 @@ else:
                 st.write("") # Adjusts spacing so the toggle aligns nicely with the header
                 show_all = st.toggle("Show All Items", value=False)
             
-           # --- APP MEMORY FOR "LOAD MORE" ---
+            # --- APP MEMORY FOR "LOAD MORE" ---
             if "gallery_limit" not in st.session_state:
                 st.session_state.gallery_limit = 100
 
@@ -337,12 +337,16 @@ else:
             cols = st.columns(5)
             for index, row in gallery_df.reset_index().iterrows():
                 with cols[index % 5]:
-                    if row['image']:
+                    
+                    # THE FIX: Properly check for 'NaN' (missing) images
+                    if pd.notna(row['image']) and str(row['image']).strip() != "":
                         st.image(row['image'], use_container_width=True)
                     else:
                         st.info("No Image")
                     
-                    short_name = row['name'][:40] + "..." if len(row['name']) > 40 else row['name']
+                    # Also protecting the name just in case it is blank!
+                    name_str = str(row['name']) if pd.notna(row['name']) else "Unknown Product"
+                    short_name = name_str[:40] + "..." if len(name_str) > 40 else name_str
                     st.markdown(f"**[{short_name}]({row['url']})**")
                     
                     # --- CHECK FOR ZERO SALES TO SHOW RESTOCKED ---
