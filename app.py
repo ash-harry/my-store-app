@@ -269,6 +269,9 @@ else:
             st.session_state.end_date += timedelta(days=1)
             st.rerun()
 
+    # --- SEARCH FILTER INPUT ---
+    search_term = st.text_input("🔍 Search products by name...", placeholder="Type here to filter your results...")
+
     # --- QUERY AND DISPLAY TABLE ---
     query = f"""
     WITH RankedInventory AS (
@@ -296,9 +299,14 @@ else:
     
     with engine.connect() as conn:
         report_df = pd.read_sql(text(query), con=conn)
+        
+    # --- APPLY THE TEXT FILTER ---
+    if not report_df.empty and search_term:
+        # This keeps only rows where the 'name' column contains the search text. case=False ignores capital letters!
+        report_df = report_df[report_df['name'].str.contains(search_term, case=False, na=False)]
     
     if report_df.empty:
-        st.info("No sales or restock data found for this date range.")
+        st.info("No sales or restock data found for this date range and search filter.")
     else:
         report_df['product_data'] = '/?sku=' + report_df['unique_id']
         
