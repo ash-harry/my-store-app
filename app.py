@@ -24,8 +24,28 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# --- PASSWORD PROTECTION (THE LOCKED DOOR) ---
+# ==========================================
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.title("🔒 Secure Login")
+    pwd = st.text_input("Please enter the password to access the dashboard:", type="password")
+    if st.button("Login"):
+        if pwd == st.secrets["APP_PASSWORD"]:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password. Please try again.")
+    st.stop() # 🛑 This completely stops the rest of the code from running until they log in!
+
+# ==========================================
+# --- THE REST OF YOUR APP RUNS BELOW ---
+# ==========================================
+
 # --- DATABASE SETUP (SUPABASE CLOUD) ---
-# This securely grabs the secret key we put in your secrets.toml file!
 DB_URL = st.secrets["DATABASE_URL"]
 engine = create_engine(DB_URL)
 
@@ -302,7 +322,6 @@ else:
         
     # --- APPLY THE TEXT FILTER ---
     if not report_df.empty and search_term:
-        # This keeps only rows where the 'name' column contains the search text. case=False ignores capital letters!
         report_df = report_df[report_df['name'].str.contains(search_term, case=False, na=False)]
     
     if report_df.empty:
@@ -327,7 +346,7 @@ else:
             with col_title:
                 st.subheader("🏆 Sellers Gallery")
             with col_toggle:
-                st.write("") # Adjusts spacing so the toggle aligns nicely with the header
+                st.write("") 
                 show_all = st.toggle("Show All Items", value=False)
             
             # --- APP MEMORY FOR "LOAD MORE" ---
@@ -339,20 +358,17 @@ else:
                 gallery_df = report_df.head(st.session_state.gallery_limit)
             else:
                 gallery_df = report_df.head(10)
-                st.session_state.gallery_limit = 100 # Reset back to 100 if they turn the toggle off
+                st.session_state.gallery_limit = 100 
             
             # --- DRAW THE GALLERY ---
             cols = st.columns(5)
             for index, row in gallery_df.reset_index().iterrows():
                 with cols[index % 5]:
-                    
-                    # THE FIX: Properly check for 'NaN' (missing) images
                     if pd.notna(row['image']) and str(row['image']).strip() != "":
                         st.image(row['image'], use_container_width=True)
                     else:
                         st.info("No Image")
                     
-                    # Also protecting the name just in case it is blank!
                     name_str = str(row['name']) if pd.notna(row['name']) else "Unknown Product"
                     short_name = name_str[:40] + "..." if len(name_str) > 40 else name_str
                     st.markdown(f"**[{short_name}]({row['url']})**")
@@ -366,12 +382,10 @@ else:
                     else:
                         st.markdown("🔄 **RESTOCKED**")
                         
-                    # Adding "Total:" so it's clear what this number means
                     st.markdown(f"💰 Total: AED {row['total_revenue_aed']:,.2f}")
                     st.write("") 
             
             # --- THE "LOAD MORE" BUTTON ---
-            # Only show this button if the toggle is ON and there is actually more data to show!
             if show_all and len(report_df) > st.session_state.gallery_limit:
                 st.write("") 
                 if st.button("⬇️ Load Next 100 Items", use_container_width=True):
