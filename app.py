@@ -49,37 +49,47 @@ if not st.session_state.authenticated:
 DB_URL = st.secrets["DATABASE_URL"]
 engine = create_engine(DB_URL)
 
-def init_db():
+# We updated this function to accept specific table names for different brands!
+def init_db(inv_t, sales_t):
     with engine.begin() as conn:
-        conn.execute(text('''CREATE TABLE IF NOT EXISTS inventory
+        conn.execute(text(f'''CREATE TABLE IF NOT EXISTS {inv_t}
                      (date TEXT, unique_id TEXT, name TEXT, image TEXT, url TEXT, inventory INTEGER, price REAL)'''))
-        conn.execute(text('''CREATE TABLE IF NOT EXISTS daily_sales
+        conn.execute(text(f'''CREATE TABLE IF NOT EXISTS {sales_t}
                      (date TEXT, unique_id TEXT, name TEXT, image TEXT, sales_qty INTEGER, price REAL, revenue REAL, status TEXT)'''))
-
-init_db()
 
 # ==========================================
 # PAGE 2: PRODUCT DETAILS REPORT (NEW TAB)
 # ==========================================
 if "sku" in st.query_params:
     sku = st.query_params["sku"]
+    # We grab the brand from the URL so it knows which database tables to search!
+    current_brand = st.query_params.get("brand", "Omnia")
+    
+    if current_brand == "Omnia":
+        inv_table = "inventory"
+        sales_table = "daily_sales"
+    else:
+        inv_table = f"{current_brand.lower()}_inventory"
+        sales_table = f"{current_brand.lower()}_daily_sales"
+        
+    init_db(inv_table, sales_table)
     
     if st.button("⬅️ Back to Main Dashboard"):
         st.query_params.clear()
         st.rerun()
         
-    st.title("📦 Product Data Report")
+    st.title(f"📦 Product Data Report ({current_brand})")
     
-    latest_info = pd.read_sql(f"SELECT * FROM inventory WHERE unique_id = '{sku}' AND image IS NOT NULL AND image != '' ORDER BY date DESC LIMIT 1", engine)
+    latest_info = pd.read_sql(f"SELECT * FROM {inv_table} WHERE unique_id = '{sku}' AND image IS NOT NULL AND image != '' ORDER BY date DESC LIMIT 1", engine)
     
     if latest_info.empty:
-         latest_info = pd.read_sql(f"SELECT * FROM inventory WHERE unique_id = '{sku}' ORDER BY date DESC LIMIT 1", engine)
+         latest_info = pd.read_sql(f"SELECT * FROM {inv_table} WHERE unique_id = '{sku}' ORDER BY date DESC LIMIT 1", engine)
 
     if not latest_info.empty:
         info = latest_info.iloc[0]
         col_img, col_details = st.columns([1, 3])
         with col_img:
-            if info['image']:
+            if pd.notna(info['image']) and str(info['image']).strip() != "":
                 st.image(info['image'], use_container_width=True)
             else:
                 st.info("No Image Available")
@@ -104,7 +114,7 @@ if "sku" in st.query_params:
         with col_ed:
             p_end = st.date_input("End Date", default_end, key="p_end")
             
-        sales_history = pd.read_sql(f"SELECT date, sales_qty FROM daily_sales WHERE unique_id = '{sku}' AND date >= '{p_start}' AND date <= '{p_end}' ORDER BY date", engine)
+        sales_history = pd.read_sql(f"SELECT date, sales_qty FROM {sales_table} WHERE unique_id = '{sku}' AND date >= '{p_start}' AND date <= '{p_end}' ORDER BY date", engine)
         
         if not sales_history.empty:
             sales_history.set_index('date', inplace=True)
@@ -118,15 +128,30 @@ if "sku" in st.query_params:
 # PAGE 1: MAIN DASHBOARD
 # ==========================================
 else:
-    st.title("🛍️ Daily Inventory & Sales Tracker")
+    # --- BRAND SELECTOR (NEW!) ---
+    st.sidebar.title("🏢 Brand Selection")
+    selected_brand = st.sidebar.selectbox("Choose a Brand to Manage:", ["Omnia", "Aishas"])
+    st.sidebar.divider()
+    
+    # Set the database tables based on the selected brand
+    if selected_brand == "Omnia":
+        inv_table = "inventory"
+        sales_table = "daily_sales"
+    else:
+        inv_table = f"{selected_brand.lower()}_inventory"
+        sales_table = f"{selected_brand.lower()}_daily_sales"
+        
+    init_db(inv_table, sales_table)
+
+    st.title(f"🛍️ {selected_brand} - Daily Inventory & Sales")
 
     # --- SIDEBAR: BULK UPLOAD ---
-    st.sidebar.header("1. Upload Daily Data")
+    st.sidebar.header(f"1. Upload {selected_brand} Data")
     uploaded_files = st.sidebar.file_uploader("Upload Excel/CSV Files", type=['csv', 'xlsx'], accept_multiple_files=True)
 
     if uploaded_files:
-        if st.sidebar.button("Process Uploaded Files"):
-            with st.spinner("Analyzing and syncing to Supabase..."):
+        if st.sidebar.button(f"Process Uploaded Files"):
+            with st.spinner(f"Analyzing and syncing to {selected_brand} database..."):
                 all_data = []
                 
                 for file in uploaded_files:
@@ -147,6 +172,21 @@ else:
                             df.columns = ['DateTime Extracted', 'Name', 'Sku', 'Image', 'Url', 'inventory Amount', 'Price']
                         elif len(df.columns) == 6:
                             df.columns = ['DateTime Extracted', 'Name', 'Sku', 'Url', 'inventory Amount', 'Price']
+
+                    # ========================================================
+                    # --- BRAND SAFETY CHECK (THE SECURITY GUARD) ---
+                    # ========================================================
+                    brand_slug = selected_brand.lower()
+                    if 'Url' in df.columns and len(df) > 0:
+                        # Check if the brand name is anywhere in the first few URLs
+                        is_correct_brand = df['Url'].head(10).astype(str).str.lower().str.contains(brand_slug).any()
+                        # Also check if the brand name is in the actual file name
+                        is_correct_filename = brand_slug in file.name.lower()
+                        
+                        if not is_correct_brand and not is_correct_filename:
+                            st.sidebar.error(f"🛑 **Upload Blocked!** The file `{file.name}` does not look like it belongs to **{selected_brand}**. Please double-check your file!")
+                            st.stop() # This completely stops the app from saving bad data!
+                    # ========================================================
 
                     if 'Image' not in df.columns:
                         df['Image'] = None
@@ -169,7 +209,7 @@ else:
                 st.sidebar.write(f"Found data for these dates: {', '.join(unique_dates)}")
                 
                 for process_date in unique_dates:
-                    existing_data = pd.read_sql(f"SELECT COUNT(*) as cnt FROM inventory WHERE date = '{process_date}'", engine)
+                    existing_data = pd.read_sql(f"SELECT COUNT(*) as cnt FROM {inv_table} WHERE date = '{process_date}'", engine)
                     
                     if existing_data['cnt'][0] > 0:
                         st.sidebar.warning(f"Skipped {process_date}: Data already calculated.")
@@ -180,9 +220,9 @@ else:
                     
                     df_to_save = df_day[['date', 'unique_id', 'Name', 'Image', 'Url', 'inventory', 'Price']].copy()
                     df_to_save.rename(columns={'Name': 'name', 'Image': 'image', 'Url': 'url', 'Price': 'price'}, inplace=True)
-                    df_to_save.to_sql('inventory', engine, if_exists='append', index=False)
+                    df_to_save.to_sql(inv_table, engine, if_exists='append', index=False)
                     
-                    yesterday_df = pd.read_sql(f"SELECT unique_id, inventory as yesterday_inv FROM inventory WHERE date < '{process_date}' ORDER BY date DESC", engine)
+                    yesterday_df = pd.read_sql(f"SELECT unique_id, inventory as yesterday_inv FROM {inv_table} WHERE date < '{process_date}' ORDER BY date DESC", engine)
                     yesterday_df = yesterday_df.drop_duplicates(subset=['unique_id'])
                     
                     if not yesterday_df.empty:
@@ -202,13 +242,13 @@ else:
                         merged['revenue'] = merged['sales_qty'] * merged['price']
                         
                         sales_to_save = merged[['date', 'unique_id', 'name', 'image', 'sales_qty', 'price', 'revenue', 'status']]
-                        sales_to_save.to_sql('daily_sales', engine, if_exists='append', index=False)
+                        sales_to_save.to_sql(sales_table, engine, if_exists='append', index=False)
                         st.sidebar.success(f"Successfully processed sales for {process_date}!")
                     else:
                         st.sidebar.info(f"Processed {process_date} (First baseline set).")
 
     # --- MAIN DASHBOARD: REPORTING ---
-    st.header("2. Sales Reports")
+    st.header(f"2. {selected_brand} Sales Reports")
 
     if "start_date" not in st.session_state:
         st.session_state.start_date = datetime.now().date()
@@ -253,7 +293,7 @@ else:
         st.rerun()
         
     if b8.button("All Time", use_container_width=True):
-        min_date_query = pd.read_sql("SELECT MIN(date) as min_date FROM daily_sales", engine)
+        min_date_query = pd.read_sql(f"SELECT MIN(date) as min_date FROM {sales_table}", engine)
         if min_date_query['min_date'][0]: 
             first_recorded_date = datetime.strptime(min_date_query['min_date'][0], '%Y-%m-%d').date()
             st.session_state.start_date = first_recorded_date
@@ -297,7 +337,7 @@ else:
     WITH RankedInventory AS (
         SELECT unique_id, price as current_price, url, image,
                ROW_NUMBER() OVER(PARTITION BY unique_id ORDER BY date DESC) as rn
-        FROM inventory
+        FROM {inv_table}
         WHERE date <= '{st.session_state.end_date}'
     )
     SELECT 
@@ -309,7 +349,7 @@ else:
         (r.current_price * 3.66) as current_price_aed,
         SUM(d.revenue * 3.66) as total_revenue_aed,
         STRING_AGG(DISTINCT d.status, ', ') as notes
-    FROM daily_sales d
+    FROM {sales_table} d
     LEFT JOIN (SELECT * FROM RankedInventory WHERE rn = 1) r ON d.unique_id = r.unique_id
     WHERE d.date >= '{st.session_state.start_date}' AND d.date <= '{st.session_state.end_date}'
     GROUP BY d.unique_id, d.name, r.image, r.url, r.current_price
@@ -325,9 +365,10 @@ else:
         report_df = report_df[report_df['name'].str.contains(search_term, case=False, na=False)]
     
     if report_df.empty:
-        st.info("No sales or restock data found for this date range and search filter.")
+        st.info(f"No sales or restock data found for {selected_brand} in this date range.")
     else:
-        report_df['product_data'] = '/?sku=' + report_df['unique_id']
+        # We also pass the brand through the URL so the Product Report tab knows which database to search!
+        report_df['product_data'] = '/?sku=' + report_df['unique_id'] + '&brand=' + selected_brand
         
         total_rev = report_df['total_revenue_aed'].sum()
         total_units = report_df['total_units_sold'].sum()
@@ -364,6 +405,7 @@ else:
             cols = st.columns(5)
             for index, row in gallery_df.reset_index().iterrows():
                 with cols[index % 5]:
+                    
                     if pd.notna(row['image']) and str(row['image']).strip() != "":
                         st.image(row['image'], use_container_width=True)
                     else:
